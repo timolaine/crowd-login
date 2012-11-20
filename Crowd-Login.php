@@ -28,6 +28,7 @@ function crowd_activation_hook() {
 	add_option('crowd_domain_controllers', 'crowd01.mydomain.local');
 	add_option('crowd_security_mode', 'security_low');
 	add_option('crowd_login_mode', 'mode_normal');
+	add_option('crowd_api_mode', 'rest');
 	add_option('crowd_account_type', 'Contributor');
 }
 
@@ -48,7 +49,7 @@ function crowd_authenticate($user, $username, $password) {
 	$crowd_url = get_option('crowd_url');
 	$crowd_app_name = get_option('crowd_app_name');
 	$crowd_app_password = get_option('crowd_app_password');
-
+	$crowd_api_mode = get_option('crowd_api_mode');
 	$crowd_config = array(
 		'service_url' => $crowd_url . DIRECTORY_SEPARATOR . 'services' . DIRECTORY_SEPARATOR . 'SecurityServer?wsdl',
 		'app_name' => $crowd_app_name,

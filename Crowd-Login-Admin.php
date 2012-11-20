@@ -80,6 +80,7 @@ if ($_POST['stage'] == 'process') {
 	update_option('crowd_app_password', $_POST['crowd_app_password']);
 	update_option('crowd_security_mode', $_POST['crowd_security_mode']);
 	update_option('crowd_login_mode', $_POST['crowd_login_mode']);
+	update_option('crowd_api_mode', $_POST['crowd_api_mode']);
 	update_option('crowd_group', $_POST['crowd_group']);
 	update_option('crowd_account_type', $_POST['crowd_account_type']);
 } elseif ($_POST['stage'] == 'test') {
@@ -108,6 +109,7 @@ $crowd_app_name = get_option('crowd_app_name');
 $crowd_app_password = get_option('crowd_app_password');
 $crowd_security_mode = get_option('crowd_security_mode');
 $crowd_login_mode = get_option('crowd_login_mode');
+$crowd_api_mode = get_option('crowd_api_mode',"rest");
 $crowd_group = get_option('crowd_group');
 $crowd_account_type = get_option('crowd_account_type');
 
@@ -137,6 +139,11 @@ $crowd_account_type = get_option('crowd_account_type');
 <div class="advanced">
 <h2>Advanced</h2>
 <h3>For the intrepid and daring among you.</h3>
+<p style="margin-left:15px; margin-top:0px;"><strong>API mode for Crowd library:</strong><br/>
+<select name="crowd_api_mode">
+<option value="soap" <?php if($crowd_api_mode == "soap") {echo 'selected="selected"';} ?>>SOAP</option>
+<option value="rest" <?php if($crowd_api_mode == "rest") {echo 'selected="selected"';} ?>>REST</option>
+</p>
 <p style="margin-bottom:0px;"><strong>Login mode:</strong><br>
 <input name="crowd_login_mode" type="radio" value="mode_normal" <?php if($crowd_login_mode=="mode_normal"){echo "checked";}?> > <label for="mode_normal">Authenticate Wordpress users against Crowd. I will create the accounts in Wordpress myself. (default)</label><br/>
 <input name="crowd_login_mode" type="radio" value="mode_create_all" <?php if($crowd_login_mode=="mode_create_all"){echo "checked";}?> > <label for="mode_create_all">Create Wordpress accounts for anyone who successfully authenticates against Crowd.</label><br/>
