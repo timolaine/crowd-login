@@ -9,6 +9,7 @@ Author URI:
 */
 
 require_once( WP_PLUGIN_DIR."/crowd-login/Crowd.php");
+require_once( WP_PLUGIN_DIR."/crowd-login/Crowd-REST.php");
 require_once( ABSPATH . WPINC . '/registration.php');
 
 //Admin
@@ -44,17 +45,29 @@ add_filter('authenticate', 'crowd_authenticate', 1, 3);
 
 //Authenticate function
 function crowd_authenticate($user, $username, $password) {
-	global $crowd;
 
 	$crowd_url = get_option('crowd_url');
 	$crowd_app_name = get_option('crowd_app_name');
 	$crowd_app_password = get_option('crowd_app_password');
 	$crowd_api_mode = get_option('crowd_api_mode');
 	$crowd_config = array(
+		'crowd_url' => $crowd_url,
 		'service_url' => $crowd_url . DIRECTORY_SEPARATOR . 'services' . DIRECTORY_SEPARATOR . 'SecurityServer?wsdl',
 		'app_name' => $crowd_app_name,
 		'app_credential' => $crowd_app_password
 	);
+
+	if($crowd_api_mode == "rest") {
+		return crowd_authenticate_rest($user, $username, $password, $crowd_config);
+	} elseif($crowd_api_mode == "soap") {
+		return crowd_authenticate_soap($user, $username, $password, $crowd_config);
+	} else {
+		return new WP_Error($code = null, $message = "Invalid Crowd Authentication API Mode: ${crowd_api_mode} (valid values are 'rest' and 'soap')");
+	}
+}
+
+function crowd_authenticate_soap($user, $username, $password, $crowd_config) {
+	global $crowd;
 
 	try {
 		$crowd = new Crowd($crowd_config);
