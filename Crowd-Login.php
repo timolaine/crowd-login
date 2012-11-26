@@ -46,6 +46,24 @@ add_filter('authenticate', 'crowd_authenticate', 1, 3);
 //Authenticate function
 function crowd_authenticate($user, $username, $password) {
 
+	// some previous authentication already suceeded, defer
+	if ( is_a($user, 'WP_User') ) { return $user; }
+
+	// make sure we have what we need to authenticate
+	if ( empty($username) || empty($password) ) {
+		$error = new WP_Error();
+
+		if ( empty($username) ) {
+			$error->add('empty_username', __('<strong>ERROR</strong>: The username field is empty.'));
+		}
+
+		if ( empty($password) ) {
+			$error->add('empty_password', __('<strong>ERROR</strong>: The password field is empty.'));
+		}
+		return $error;
+	}
+
+	// set up our environment
 	$crowd_url = get_option('crowd_url');
 	$crowd_app_name = get_option('crowd_app_name');
 	$crowd_app_password = get_option('crowd_app_password');
@@ -57,14 +75,34 @@ function crowd_authenticate($user, $username, $password) {
 		'app_credential' => $crowd_app_password
 	);
 
+
+	$rc = null;
 	if($crowd_api_mode == "rest") {
-		return crowd_authenticate_rest($user, $username, $password, $crowd_config);
+		$rc = crowd_authenticate_rest($user, $username, $password, $crowd_config);
 	} elseif($crowd_api_mode == "soap") {
-		return crowd_authenticate_soap($user, $username, $password, $crowd_config);
+		$rc = crowd_authenticate_soap($user, $username, $password, $crowd_config);
 	} else {
 		return new WP_Error($code = null, $message = "Invalid Crowd Authentication API Mode: ${crowd_api_mode} (valid values are 'rest' and 'soap')");
 	}
+
+	if(is_a($rc,"WP_User")) {
+		// authentication successful
+		return $rc;
+	}
+
+	// failed, should we let it continue to lower priority authenticate methods?
+	if(get_option('crowd_security_mode') == 'security_high') {
+		remove_filter('authenticate', 'wp_authenticate_username_password', 20, 3);
+	}
+
+
 }
+
+function crowd_authenticate_rest($user, $username, $password, $crowd_config) {
+	$error = new WP_Error($code = null, $message = "REST authentication not yet implemented");
+	return $error;
+}
+
 
 function crowd_authenticate_soap($user, $username, $password, $crowd_config) {
 	global $crowd;
@@ -84,25 +122,6 @@ function crowd_authenticate_soap($user, $username, $password, $crowd_config) {
 		echo $e->getMessage();
 	}
 
-	if ( is_a($user, 'WP_User') ) { return $user; }
-
-	//Failed, should we let it continue to lower priority authenticate methods?
-	if(get_option('crowd_security_mode') == 'security_high') {
-		remove_filter('authenticate', 'wp_authenticate_username_password', 20, 3);
-	}
-
-	if ( empty($username) || empty($password) ) {
-		$error = new WP_Error();
-
-		if ( empty($username) ) {
-			$error->add('empty_username', __('<strong>ERROR</strong>: The username field is empty.'));
-		}
-
-		if ( empty($password) ) {
-			$error->add('empty_password', __('<strong>ERROR</strong>: The password field is empty.'));
-		}
-		return $error;
-	}
 
 	$auth_result = crowd_can_authenticate($username, $password);
 	if($auth_result == true && !is_a($auth_result, 'WP_Error')) {
