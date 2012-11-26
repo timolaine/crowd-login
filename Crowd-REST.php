@@ -9,7 +9,6 @@ class CrowdREST {
 	private $crowd_config;
 	private $crowd_app_token;
 
-	define()
 	function curlPost($url, $attrs, $post_body) {
 		$crowd_endpoint = $crowd_config['service_endpoint'];
 		$full_url = "${crowd_endpoint}${__CROWD_REST_API_PATH}${url}?" . http_build_query($attrs);
