@@ -1,18 +1,21 @@
 <?php
-    require('CrowdREST.php');
+	header("Content-Type: text/plain");
+
+    require('Crowd-REST.php');
 
     $fields = array(
-        'crowd_endpoint' => false,
+        'crowd_url' => false,
         'app_name' => false,
         'app_credential' => true,
         'username' => false,
         'password' => true
         );
 
-    if($_POST && array_key_exists('crowd_endpoint', $_POST)) {
+    if($_POST && array_key_exists('crowd_url', $_POST)) {
         $username = $_POST['username'];
         $password = $_POST['password'];
 
+		  $_POST['verify_ssl_peer'] = false;
         $crowd = new CrowdREST($_POST);
 
         $messages = array();
@@ -28,13 +31,14 @@
         if($userinfo) {
             $messages[] = "Got user info for '${username}'";
             $msg = "<table><tr><th>field</th><th>value</th></tr>\n";
-            for($field => $value in $userinfo) {
+            foreach($userinfo as $field => $value) {
                 $msg = "${msg}<tr><td>${field}</td><td>${value}</td></tr>\n";
             }
             $msg = "$msg</table>\n";
             $messages[] = $msg;
         }
     }
+    header("Content-Type: text/html",true);
 ?>
 <html>
 <head>
@@ -44,22 +48,24 @@
 <?php
     if (count($messages) > 0) {
         echo "<div style='width: 50%; float: right; padding: 30px;'>";
-        for($message in $messages) {
+        foreach($messages as $message) {
             echo "<div>${message}</div>";
         }
         echo "</div>";
     }
 ?>
 <div style='float: left; width: 50%; padding: 30px;'>
-    <form name='testcrwod' action='<? echo $_SERVER['PHP_SELF'];?>'>
+    <form name='testcrwod' action='<? echo $_SERVER['PHP_SELF'];?>' method='post'>
     <table>
 <?php
-    for($field => $password in $fields) {
+    foreach($fields as $field => $password) {
         $type = $password ? "password" : "text";
         $value = isset($_POST[$field]) ? $_POST[$field] : "";
-        echo "<tr><td style='text-align: right'>${field}</td><td><input type='$type' name='${field}'>${value}</input>\n";
-    ?>
+        echo "<tr><td style='text-align: right'>${field}</td><td><input type='$type' name='${field}' value='${value}'/>\n";
+	}
+?>
 </table>
+	 <input type='submit'/>
     </form>
 </div>
 </body>
