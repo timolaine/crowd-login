@@ -11,6 +11,7 @@ class CrowdREST {
 	private $crowd_config;
 	private $cookies = null;
 	private $base_url = null;
+	private $crowd_cookie_config = null;
 
 	public function CrowdREST($crowd_config) {
 		$this->crowd_config = $crowd_config;
@@ -129,8 +130,8 @@ class CrowdREST {
 		// got back a valid XML response (hopefully)
 		$xmlResponse = new SimpleXMLElement($rc['response']);
 		if($xmlResponse[0]->getName() == "error") {
-			$reason = $xmlResponse->{reason};
-			$message = $xmlResponse->{message};
+			$reason = (string)$xmlResponse->{reason};
+			$message = (string)$xmlResponse->{message};
 			error_log("${msg_prefix}: ${reason} - ${message}");
 			return null;
 		}
@@ -150,7 +151,7 @@ class CrowdREST {
 	 * authentication if credentials are provided
 	 */
 	function authenticateUser($username, $password) {
-		if($this->isSSOEnabled() && !isset($username) && !isset($password)) {
+		if($this->isSSOEnabled() && empty($username) && empty($password)) {
 			// SSO uses a different auth mechanism and handles cookies
 			$authenticated_username = $this->tokenAuth();
 			if($authenticated_username != null) {
@@ -158,8 +159,7 @@ class CrowdREST {
 			};
 		}
 
-		if(isset($username) && count(trim($username)) > 0 &&
-		   isset($password) && count(trim($password)) > 0) {
+		if(!empty($username) && !empty($password)) {
 		    
 		    if($this->isSSOEnabled()) {
 		    	// authenticate and create SSO tokens
@@ -183,11 +183,11 @@ class CrowdREST {
 
 		// got back a valid XML response (hopefully)
 		$xmlResponse = $this->crowd_xml_logerror($rc,"Error returned in Crowd XML response");
-				echo $xmlResponse;
 		if($xmlResponse) {
-			if($xmlResponse[0]->getName() == "user") {
-				return ($xmlResponse[0]->user == $username);
-				
+			$authenticated_username = $xmlResponse->user['name'];
+			if($authenticated_username == $username) {
+				// authentication successful
+				return $authenticated_username;
 			} else {
 				error_log("Got unexpected Crowd XML response to auth query:\n" . $rc['response']);
 			}
@@ -199,6 +199,7 @@ class CrowdREST {
 	function tokenAuth() {
 		$cookie_config = $this->getCrowdCookieConfig();
 
+		var_dump($cookie_config);
 		if($cookie_config == null) {
 			// errors have already been logged in this case
 			return null;
@@ -214,10 +215,10 @@ class CrowdREST {
 						// extract username from response
 						$xmlResponse = new SimpleXMLElement($rc['response']);
 						$userElement = $xmlResponse->user;
-						$authenticated_username = $userElement->name;
+						$authenticated_username = $userElement['name'];
 
 						// confirm that tokens match (just in case)
-						$authenticated_token = $xmlResponse->token;
+						$authenticated_token = (string)$xmlResponse->token;
 						if($authenticated_token != $token) {
 							error_log("Crowd SSO inconsistency: sent token ${token}, got back ${authenticated_token}: mismatch");
 						}
@@ -256,10 +257,10 @@ class CrowdREST {
 				// extract username from response
 				$xmlResponse = new SimpleXMLElement($rc['response']);
 				$userElement = $xmlResponse->user;
-				$authenticated_username = $userElement->name;
+				$authenticated_username = $userElement['name'];
 
 				// confirm that tokens match (just in case)
-				$authenticated_token = $xmlResponse->token;
+				$authenticated_token = (string)$xmlResponse->token;
 
 				// set the cookie
 				$name = $cookie_config['name'];
@@ -268,6 +269,7 @@ class CrowdREST {
 				$value = $authenticated_token;
 				$session_only = 0;
 				setcookie($name, $value, $session_only, '/', $domain, $secure);
+				error_log("Auth sucess: ${authenticated_username} ${authenticated_token}");
 				return $authenticated_username; // authentication successful and token set
 			} elseif($http_response_code == 400) {
 				// authentication failed - bad credentials
@@ -281,16 +283,21 @@ class CrowdREST {
 	}
 
 	function getCrowdCookieConfig() {
-		$rc = $this->curlDo("/config/cookie");
-		if(!$this->curl_logerror($rc,"Error while retrieving Crowd cookie config")){
-			return null;
+		if ($this->crowd_cookie_config == null) {
+			$rc = $this->curlDo("/config/cookie");
+			if(!$this->curl_logerror($rc,"Error while retrieving Crowd cookie config")){
+				return null;
+			} else {
+				$xmlResponse = $this->crowd_xml_logerror($rc,"Crowd error while retrieving cookie config");
+				$cookie_config = array();
+				$cookie_config['domain'] = (string)$xmlResponse->domain;
+				$cookie_config['secure'] = (string)$xmlResponse->secure;
+				$cookie_config['name']   = (string)$xmlResponse->name;
+				$this->crowd_cookie_config = $cookie_config;
+				return $cookie_config;
+			}
 		} else {
-			$xmlResponse = $this->crowd_xml_logerror($rc,"Crowd error while retrieving cookie config");
-			$cookie_config = array();
-			$cookie_config['domain'] = $xmlResponse->domain;
-			$cookie_config['secure'] = $xmlResponse->secure;
-			$cookie_config['name']   = $xmlResponse->name;
-			return $cookie_config;
+			return $this->crowd_cookie_config;
 		}
 
 		return null;
@@ -327,10 +334,10 @@ class CrowdREST {
 			if($xmlResponse[0]->getName() == "user") {
 
 				// break out from the XML
-				$firstname = $xmlResponse->{'first-name'};
-				$lastname = $xmlResponse->{'last-name'};
-				$email = $xmlResponse->{'email'};
-				$display_name = $xmlResponse->{'display-name'};
+				$firstname = (string)$xmlResponse->{'first-name'};
+				$lastname = (string)$xmlResponse->{'last-name'};
+				$email = (string)$xmlResponse->{'email'};
+				$display_name = (string)$xmlResponse->{'display-name'};
 
 				// seed the array to be used for user creation
 				$userData = array(

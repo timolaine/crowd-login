@@ -19,9 +19,10 @@
         $crowd = new CrowdREST($_POST);
 
         $messages = array();
-
-        if($crowd->authenticateUser($username,$password)) {
-            $messages[] = "Authentication of '${username}' sucessful.";
+	$auth_response = $crowd->authenticateUser($username,$password);
+	$messages[] = "Got auth response of '${auth_response}'";
+        if (!empty($auth_response)) {
+            $messages[] = "Authentication of '${auth_response}' sucessful.";
         } else {
             $messages[] = "Authentication of '${username}' failed (check log).";
         }
