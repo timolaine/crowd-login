@@ -203,10 +203,9 @@ class CrowdREST {
 			// errors have already been logged in this case
 			return null;
 		} else {
-			var_dump($cookie_config);
-			var_dump($_COOKIE);
-			if(array_key_exists($cookie_config['name'], $_COOKIE)) {
-				$token = $_COOKIE[$cookie_config['name']];
+			$cookie_name = $this->getCookieName();
+			if($cookie_name, $_COOKIE)) {
+				$token = $_COOKIE[$cookie_name];
 				if($token) {
 					$tokenCheckXML = $this->generateTokenVerificationXML($token);
 					$rc = $this->curlDo("/session/${token}", null, $tokenCheckXML);
@@ -391,6 +390,16 @@ class CrowdREST {
 		$validationFactor->appendChild($document->createElement('value',$_SERVER['REMOTE_ADDR']));
 		$xml = $document->saveXML();
 		return $xml;
+	}
+
+	private function getCookieName(){
+		$crowd_cookie_config = $this->getCrowdCookieConfig();
+		if (ini_get('register_globals')) {
+			// replace all dots in the name with underscores
+			return preg_replace("/\./g", "_", $crowd_cookie_config['name']);
+		} else {
+			return $crowd_cookie_config['name'];
+		}
 	}
 }
 ?>
