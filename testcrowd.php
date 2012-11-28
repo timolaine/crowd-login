@@ -45,17 +45,8 @@
     <title>Crowd REST API Client Test Page</title>
 </head>
 <body>
-<?php
-    if (count($messages) > 0) {
-        echo "<div style='width: 50%; float: right; padding: 30px;'>";
-        foreach($messages as $message) {
-            echo "<div>${message}</div>";
-        }
-        echo "</div>";
-    }
-?>
-<div style='float: left; width: 50%; padding: 30px;'>
-    <form name='testcrwod' action='<? echo $_SERVER['PHP_SELF'];?>' method='post'>
+<div style='float: left; padding: 30px;'>
+    <form name='testcrwod' action='<?php echo $_SERVER['PHP_SELF'];?>' method='post'>
     <table>
 <?php
     foreach($fields as $field => $password) {
@@ -68,5 +59,14 @@
 	 <input type='submit'/>
     </form>
 </div>
+<?php
+    if (isset($messages) && count($messages) > 0) {
+        echo "<div style='float: left; padding: 30px;'>";
+        foreach($messages as $message) {
+            echo "<div>${message}</div>";
+        }
+        echo "</div>";
+    }
+?>
 </body>
 </html>

@@ -15,19 +15,21 @@ class CrowdREST {
 	public function CrowdREST($crowd_config) {
 		$this->crowd_config = $crowd_config;
 		$this->base_url = $crowd_config['crowd_url'] . self::CROWD_REST_API_PATH;
+		if(!array_key_exists(self::CONFIG_SSO_ENABLED,$this->crowd_config)) {
+                    $this->crowd_config[self::CONFIG_SSO_ENABLED] = true;
+		}
 	}
 
 	private function curlPost($url, $attrs, $post_body = false) {
 		$crowd_config = $this->crowd_config;
-		$full_url = $this->{base_url} . ${url}. "?" . http_build_query($attrs);
+		$full_url = $this->base_url . $url. "?" . http_build_query($attrs);
 		$curl = curl_init($full_url);
-		curl_setopt($curl, CURLOPT_USERPWD, '[' . $crowd_config['app_name'] . ']:[' . $crowd_config['app_credential'] . ']');
+		curl_setopt($curl, CURLOPT_USERPWD, $crowd_config['app_name'] . ':' . $crowd_config['app_credential'] );
 		curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
-		curl_setopt($curl, CURLOPT_HTTPHEADER, array("Content-Type: text/xml")); 
+		curl_setopt($curl, CURLOPT_HTTPHEADER, array("Content-Type: application/xml")); 
 		$post_body ? curl_setopt($curl, CURLOPT_POSTFIELDS,$post_body) : null;
 		if (array_key_exists('verify_ssl_peer',$crowd_config)) {
 		    curl_setopt($curl, CURLOPT_SSL_VERIFYPEER, $crowd_config['verify_ssl_peer']);
-			 error_log("Set CURLOPT_SSL_VERIFYPEER to " . $crowd_config['verify_ssl_peer']);
 		}
 		curl_setopt($curl, CURLOPT_HEADER, true);
 		$this->curl_load_cookies($curl);
@@ -45,25 +47,26 @@ class CrowdREST {
 	}
 
 	private function curl_split_headers($raw_response,$info) {
-		$headers = substr($raw_response, 0, $info[CURLINFO_HEADER_SIZE]);
-		$response = substr($raw_response, $info[CURLINFO_HEADER_SIZE]);
+		$header_size = $info['header_size'];
+		$headers = substr($raw_response, 0, $header_size);
+		$response = substr($raw_response, $header_size);
 		return array('headers' => $headers, 'response' => $response);
 	}
 
 	private function curl_store_cookies($rc) {
 		$headers = $rc['headers'];
-		preg_match_all('|Set-Cookie: (.*);|U', $data, $matches);   
+		preg_match_all('|Set-Cookie: (.*);|U', $headers, $matches);   
 		$this->cookies = implode('; ', $matches[1]);
 	}
 
 	private function curl_load_cookies($curl) {
 		if($this->cookies) {
-				curl_setopt($curl,CULR_COOKIES,$this->cookies);
+			curl_setopt($curl,CURLOPT_COOKIE,$this->cookies);
 		}
 	}
 
 	private function curl_logerror($rc, $msg_prefix = "curl error") {
-		$http_response_code = $rc['metadata'][CURLINFO_HTTP_CODE];
+		$http_response_code = $rc['metadata']['http_code'];
 
 		if($http_response_code != 200) {
 			error_log("${msg_prefix}:\n" . $rc['response']);
@@ -87,7 +90,7 @@ class CrowdREST {
 	}
 
 	function isSSOEnabled() {
-		if($crowd_config[self::CONFIG_SSO_ENABLED]) {
+		if($this->crowd_config[self::CONFIG_SSO_ENABLED]) {
 			return true;
 		} 
 		return false;
@@ -96,16 +99,20 @@ class CrowdREST {
 	function authenticateUser($username, $password) {
 		if($this->isSSOEnabled()) {
 			// SSO uses a different auth mechanism and handles cookies
-			return $this->tokenAuth($username, $password);
-		} else {
-			return $this->simpleAuth($username, $password);
+			if($this->tokenAuth($username, $password)) {
+				return true;
+			};
 		}
+		return $this->simpleAuth($username, $password);
 	}
 
 	function simpleAuth($username, $password) {
 		$xmlBody = $this->generateSimpleAuthXML($password);
 		$rc = $this->curlPost("/authentication", array("username" => $username),$xmlBody);
 
+		var_dump($rc['metadata']);
+		echo $rc['headers'];
+		echo $rc['response'];
 		// check to make sure we got a 200 and response from the server
 		if(!$this->curl_logerror($rc,"Error in performing simple authentication:\n")){
 			return false;
@@ -113,9 +120,11 @@ class CrowdREST {
 
 		// got back a valid XML response (hopefully)
 		$xmlResponse = $this->crowd_xml_logerror($rc,"Error returned in Crowd XML response");
+				echo $xmlResponse;
 		if($xmlResponse) {
 			if($xmlResponse[0]->getName() == "user") {
-				return ($xmlResponse[0]-getAttr('username') == $username);
+				return ($xmlResponse[0]->user == $username);
+				
 			} else {
 				error_log("Got unexpected Crowd XML response to auth query:\n" . $rc['response']);
 			}
@@ -159,10 +168,10 @@ class CrowdREST {
 			if($xmlResponse[0]->getName() == "user") {
 
 				// break out from the XML
-				$firstname = $xmlResponse->{first-name};
-				$lastname = $xmlResponse->{last-name};
-				$email = $xmlResponse->{email};
-				$display_name = $xmlResponse->{display-name};
+				$firstname = $xmlResponse->{'first-name'};
+				$lastname = $xmlResponse->{'last-name'};
+				$email = $xmlResponse->{'email'};
+				$display_name = $xmlResponse->{'display-name'};
 
 				// seed the array to be used for user creation
 				$userData = array(
@@ -188,7 +197,8 @@ class CrowdREST {
 		$cdata = $document->createCDATASection($password);
 		$value->appendChild($cdata);
 
-		return $document->saveXML();
+		$xml = $document->saveXML();
+		return $xml;
 	}
 
 }
