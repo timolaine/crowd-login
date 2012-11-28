@@ -199,11 +199,12 @@ class CrowdREST {
 	function tokenAuth() {
 		$cookie_config = $this->getCrowdCookieConfig();
 
-		var_dump($cookie_config);
 		if($cookie_config == null) {
 			// errors have already been logged in this case
 			return null;
 		} else {
+			var_dump($cookie_config);
+			var_dump($_COOKIE);
 			if(array_key_exists($cookie_config['name'], $_COOKIE)) {
 				$token = $_COOKIE[$cookie_config['name']];
 				if($token) {
