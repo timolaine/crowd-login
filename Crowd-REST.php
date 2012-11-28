@@ -37,7 +37,6 @@ class CrowdREST {
 			$query = "?" . http_build_query($attrs);
 		}
 		$full_url = $this->base_url . $url . $query; 
-		echo $full_url;
 
 		// get a curl handle
 		$curl = curl_init($full_url);
@@ -205,7 +204,6 @@ class CrowdREST {
 			return null;
 		} else {
 			$cookie_name = $this->getCookieName();
-			echo $cookie_name;
 			if(array_key_exists($cookie_name, $_COOKIE)) {
 				$token = $_COOKIE[$cookie_name];
 				if($token) {
