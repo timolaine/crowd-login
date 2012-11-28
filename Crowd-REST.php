@@ -207,7 +207,7 @@ class CrowdREST {
 				$token = $_COOKIE[$cookie_config['name']];
 				if($token) {
 					$tokenCheckXML = $this->generateTokenVerificationXML($token);
-					$rc = curlDo("/session/${token}", null, $tokenCheckXML);
+					$rc = $this->curlDo("/session/${token}", null, $tokenCheckXML);
 					$http_response_code = $rc['metadata']['http_code'];
 					if ($http_response_code == 200) {
 						// good to go, token is renewed
@@ -249,7 +249,7 @@ class CrowdREST {
 			return null;
 		} else {
 			$tokenCreationXML = $this->generateTokenCreationXML($username, $password);
-			$rc = curlDo("/session", null, $tokenCreationXML);
+			$rc = $this->curlDo("/session", null, $tokenCreationXML);
 			$http_response_code = $rc['metadata']['http_code'];
 			if ($http_response_code == 201) { // 201 == created
 				// good to go, token is created and authentication verified
@@ -281,7 +281,7 @@ class CrowdREST {
 	}
 
 	function getCrowdCookieConfig() {
-		$rc = curlDo("/config/cookie");
+		$rc = $this->curlDo("/config/cookie");
 		if(!$this->curl_logerror($rc,"Error while retrieving Crowd cookie config")){
 			return null;
 		} else {
