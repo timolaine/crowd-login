@@ -71,10 +71,11 @@ class CrowdREST {
 
 		// extract response metadata
 		$info = curl_getinfo($curl);
-		$rc['metadata'] = $info;
 
 		// split headers out of the response
 		$rc = $this->curl_split_headers($response,$info);
+		// add in the metadata
+		$rc['metadata'] = $info;
 
 		// store cookies for later reuse
 		$this->curl_store_cookies($rc);
@@ -263,7 +264,7 @@ class CrowdREST {
 				// set the cookie
 				$name = $cookie_config['name'];
 				$domain = $cookie_config['domain'];
-				$secure = $cookie_config['secure'];
+				$secure = (bool)$cookie_config['secure'];
 				$value = $authenticated_token;
 				$session_only = 0;
 				setcookie($name, $value, $session_only, '/', $domain, $secure);
