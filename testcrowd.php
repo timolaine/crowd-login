@@ -27,7 +27,8 @@
             $messages[] = "Authentication of '${username}' failed (check log).";
         }
 
-        $userinfo = $crowd->getUserInfo($username);
+	var_dump($auth_response);
+        $userinfo = $crowd->getUserInfo($auth_response);
 
         if($userinfo) {
             $messages[] = "Got user info for '${username}'";

@@ -37,6 +37,7 @@ class CrowdREST {
 			$query = "?" . http_build_query($attrs);
 		}
 		$full_url = $this->base_url . $url . $query; 
+		echo $full_url;
 
 		// get a curl handle
 		$curl = curl_init($full_url);
@@ -204,7 +205,8 @@ class CrowdREST {
 			return null;
 		} else {
 			$cookie_name = $this->getCookieName();
-			if($cookie_name, $_COOKIE)) {
+			echo $cookie_name;
+			if(array_key_exists($cookie_name, $_COOKIE)) {
 				$token = $_COOKIE[$cookie_name];
 				if($token) {
 					$tokenCheckXML = $this->generateTokenVerificationXML($token);
@@ -215,7 +217,7 @@ class CrowdREST {
 						// extract username from response
 						$xmlResponse = new SimpleXMLElement($rc['response']);
 						$userElement = $xmlResponse->user;
-						$authenticated_username = $userElement['name'];
+						$authenticated_username = (string)$userElement['name'];
 
 						// confirm that tokens match (just in case)
 						$authenticated_token = (string)$xmlResponse->token;
@@ -223,7 +225,7 @@ class CrowdREST {
 							error_log("Crowd SSO inconsistency: sent token ${token}, got back ${authenticated_token}: mismatch");
 						}
 
-						return $authenticated_token; // SSO successful
+						return $authenticated_username; // SSO successful
 					} elseif($http_response_code == 404) {
 						// bad/expired token
 					} elseif ($http_response_code == 400) {
@@ -257,7 +259,7 @@ class CrowdREST {
 				// extract username from response
 				$xmlResponse = new SimpleXMLElement($rc['response']);
 				$userElement = $xmlResponse->user;
-				$authenticated_username = $userElement['name'];
+				$authenticated_username = (string)$userElement['name'];
 
 				// confirm that tokens match (just in case)
 				$authenticated_token = (string)$xmlResponse->token;
@@ -394,12 +396,8 @@ class CrowdREST {
 
 	private function getCookieName(){
 		$crowd_cookie_config = $this->getCrowdCookieConfig();
-		if (ini_get('register_globals')) {
-			// replace all dots in the name with underscores
-			return preg_replace("/\./g", "_", $crowd_cookie_config['name']);
-		} else {
-			return $crowd_cookie_config['name'];
-		}
+		// replace all dots in the name with underscores
+		return preg_replace('/\\./', "_", $crowd_cookie_config['name']);
 	}
 }
 ?>
