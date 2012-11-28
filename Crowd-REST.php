@@ -268,25 +268,15 @@ class CrowdREST {
 				$value = $authenticated_token;
 				$session_only = 0;
 				setcookie($name, $value, $session_only, '/', $domain, $secure);
-				return $authenticated_username;
-			}
-
-				return $authenticated_token; // SSO successful
-			} elseif($http_response_code == 404) {
-				// bad/expired token
-			} elseif ($http_response_code == 400) {
-				// validation factors did not match token - IP address changed
-				// see https://answers.atlassian.com/questions/65240/how-is-the-remote-address-in-crowd-s-validationfactor-enforced
-				error_log("Crowd SSO inconsistency: validation factors failed for token ${token} - malfeasance?");
+				return $authenticated_username; // authentication successful and token set
+			} elseif($http_response_code == 400) {
+				// authentication failed - bad credentials
+			} elseif ($http_response_code == 403) {
+				// inactive user
 			} else {
 				error_log("Crowd SSO: got back unexpected HTTP response code: ${http_response_code}");
 			}
 			return null;
-		} 
-			} else {
-				error_log("Crowd SSO Failure: Did not receive cookie name from Crowd or error.  Odd that.");
-				return null;
-			}
 		}
 	}
 
@@ -375,7 +365,7 @@ class CrowdREST {
 		$validationFactors = $document->appendChild($document->createElement("validation-factors"));
 		$validationFactor = $validationFactors->appendChild($document->createElement("validation-factor"));
 		$validationFactor->appendChild($document->createElement('name','remote_address'));
-		$validationFactor->appendChild($document->createElement('value',$_SERVER['REMOTE_ADDR']);
+		$validationFactor->appendChild($document->createElement('value',$_SERVER['REMOTE_ADDR']));
 		$xml = $document->saveXML();
 		return $xml;
 	}
@@ -386,11 +376,11 @@ class CrowdREST {
 		$authenticationContext->appendChild($document->createElement("username",$username));
 		$passwordNode =	$authenticationContext->appendChild($document->createElement("password"));
 		$cdata = $document->createCDATASection($password);
-		$passwordNode->addChild($cdata);
+		$passwordNode->appendChild($cdata);
 		$validationFactors = $authenticationContext->appendChild($document->createElement("validation-factors"));
 		$validationFactor = $validationFactors->appendChild($document->createElement("validation-factor"));
 		$validationFactor->appendChild($document->createElement('name','remote_address'));
-		$validationFactor->appendChild($document->createElement('value',$_SERVER['REMOTE_ADDR']);
+		$validationFactor->appendChild($document->createElement('value',$_SERVER['REMOTE_ADDR']));
 		$xml = $document->saveXML();
 		return $xml;
 	}
