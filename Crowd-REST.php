@@ -16,38 +16,74 @@ class CrowdREST {
 		$this->crowd_config = $crowd_config;
 		$this->base_url = $crowd_config['crowd_url'] . self::CROWD_REST_API_PATH;
 		if(!array_key_exists(self::CONFIG_SSO_ENABLED,$this->crowd_config)) {
-                    $this->crowd_config[self::CONFIG_SSO_ENABLED] = true;
+        	$this->crowd_config[self::CONFIG_SSO_ENABLED] = true;
 		}
 	}
 
-	private function curlPost($url, $attrs, $post_body = false) {
+	/**
+	 * Returns an associative array containing:
+	 * - info => metadata array returned by curl_info
+	 * - response => response body
+	 * - headers => response headers (as unparsed text)
+	 */
+	private function curlDo($url, $attrs = null, $post_body = false) {
+		// locallize this variable for terser syntax
 		$crowd_config = $this->crowd_config;
-		$full_url = $this->base_url . $url. "?" . http_build_query($attrs);
+
+		// build up the full url/query string
+		$query = "";
+		if($attrs != null && count($attrs) > 0) {
+			$query = "?" . http_build_query($attrs);
+		}
+		$full_url = $this->base_url . $url . $query; 
+
+		// get a curl handle
 		$curl = curl_init($full_url);
+
+		// Crowd REST uses HTTP auth for the app name and credential
 		curl_setopt($curl, CURLOPT_USERPWD, $crowd_config['app_name'] . ':' . $crowd_config['app_credential'] );
+		// get back the response document
 		curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
-		curl_setopt($curl, CURLOPT_HTTPHEADER, array("Content-Type: application/xml")); 
-		$post_body ? curl_setopt($curl, CURLOPT_POSTFIELDS,$post_body) : null;
+		// set our content-type correctly (we get a 415 with text/xml)
+		curl_setopt($curl, CURLOPT_HTTPHEADER, array("Content-Type: application/xml"));
+		// only post if we have a body
+		if($post_body) {
+			curl_setopt($curl, CURLOPT_POST, true);
+			curl_setopt($curl, CURLOPT_POSTFIELDS, $post_body);
+		}
+		// optional supress peer checking to deal with broken SSL configs - may be common with Crowd
 		if (array_key_exists('verify_ssl_peer',$crowd_config)) {
 		    curl_setopt($curl, CURLOPT_SSL_VERIFYPEER, $crowd_config['verify_ssl_peer']);
 		}
+		// give us back the response headers (so we can scrape cookies)
 		curl_setopt($curl, CURLOPT_HEADER, true);
+		// load our cookies from early requests
 		$this->curl_load_cookies($curl);
+
+
+		// fire off the request
 		$response = curl_exec($curl);
 
 		// check for curl errors 
 		if (curl_errno($curl)) {
 		   throw new Exception("curl error (${full_url}): " . curl_error($curl));
 		}
+
+		// extract response metadata
 		$info = curl_getinfo($curl);
-		$rc = $this->curl_split_headers($response,$info);
 		$rc['metadata'] = $info;
+
+		// split headers out of the response
+		$rc = $this->curl_split_headers($response,$info);
+
+		// store cookies for later reuse
 		$this->curl_store_cookies($rc);
+		curl_close($curl);
 		return $rc;
 	}
 
 	private function curl_split_headers($raw_response,$info) {
-		$header_size = $info['header_size'];
+		$header_size = $info['header_size']; // offset to the end of the headers
 		$headers = substr($raw_response, 0, $header_size);
 		$response = substr($raw_response, $header_size);
 		return array('headers' => $headers, 'response' => $response);
@@ -65,6 +101,12 @@ class CrowdREST {
 		}
 	}
 
+	/**
+	 * Reads a curl response, tests http return code and logs
+	 * accordingly
+	 * 
+	 * returns false on error, true on no error.
+	 */
 	private function curl_logerror($rc, $msg_prefix = "curl error") {
 		$http_response_code = $rc['metadata']['http_code'];
 
@@ -76,6 +118,12 @@ class CrowdREST {
 		return true;
 	}
 
+	/**
+	 * Reads XML response document and checks for errors.  Logs errors
+	 * accordingly.
+	 *
+	 * Returns null on error, the XML response on no error.
+	 */
 	private function crowd_xml_logerror($rc, $msg_prefix = "error in xml response") {
 		// got back a valid XML response (hopefully)
 		$xmlResponse = new SimpleXMLElement($rc['response']);
@@ -96,23 +144,37 @@ class CrowdREST {
 		return false;
 	}
 
+	/**
+	 * Attempts token auth and then falls back to password
+	 * authentication if credentials are provided
+	 */
 	function authenticateUser($username, $password) {
-		if($this->isSSOEnabled()) {
+		if($this->isSSOEnabled() && !isset($username) && !isset($password)) {
 			// SSO uses a different auth mechanism and handles cookies
-			if($this->tokenAuth($username, $password)) {
-				return true;
+			$authenticated_username = $this->tokenAuth();
+			if($authenticated_username != null) {
+				return $authenticated_username; // success!
 			};
 		}
-		return $this->simpleAuth($username, $password);
+
+		if(isset($username) && count(trim($username)) > 0 &&
+		   isset($password) && count(trim($password)) > 0) {
+		    
+		    if($this->isSSOEnabled()) {
+		    	// authenticate and create SSO tokens
+		    	return $this->tokenAuthCreateSession($username,$password);
+		    } else {
+				return $this->simpleAuth($username, $password);
+		    }
+		}
+
+		return false;
 	}
 
 	function simpleAuth($username, $password) {
 		$xmlBody = $this->generateSimpleAuthXML($password);
-		$rc = $this->curlPost("/authentication", array("username" => $username),$xmlBody);
+		$rc = $this->curlDo("/authentication", array("username" => $username),$xmlBody);
 
-		var_dump($rc['metadata']);
-		echo $rc['headers'];
-		echo $rc['response'];
 		// check to make sure we got a 200 and response from the server
 		if(!$this->curl_logerror($rc,"Error in performing simple authentication:\n")){
 			return false;
@@ -133,12 +195,118 @@ class CrowdREST {
 		return false;
 	}
 
-	function tokenAuth($username, $password) {
-		return false;
+	function tokenAuth() {
+		$cookie_config = $this->getCrowdCookieConfig();
+
+		if($cookie_config == null) {
+			// errors have already been logged in this case
+			return null;
+		} else {
+			if(array_key_exists($cookie_config['name'], $_COOKIE)) {
+				$token = $_COOKIE[$cookie_config['name']];
+				if($token) {
+					$tokenCheckXML = $this->generateTokenVerificationXML($token);
+					$rc = curlDo("/session/${token}", null, $tokenCheckXML);
+					$http_response_code = $rc['metadata']['http_code'];
+					if ($http_response_code == 200) {
+						// good to go, token is renewed
+						// extract username from response
+						$xmlResponse = new SimpleXMLElement($rc['response']);
+						$userElement = $xmlResponse->user;
+						$authenticated_username = $userElement->name;
+
+						// confirm that tokens match (just in case)
+						$authenticated_token = $xmlResponse->token;
+						if($authenticated_token != $token) {
+							error_log("Crowd SSO inconsistency: sent token ${token}, got back ${authenticated_token}: mismatch");
+						}
+
+						return $authenticated_token; // SSO successful
+					} elseif($http_response_code == 404) {
+						// bad/expired token
+					} elseif ($http_response_code == 400) {
+						// validation factors did not match token - IP address changed
+						// see https://answers.atlassian.com/questions/65240/how-is-the-remote-address-in-crowd-s-validationfactor-enforced
+						error_log("Crowd SSO inconsistency: validation factors failed for token ${token} - malfeasance?");
+					} else {
+						error_log("Crowd SSO: got back unexpected HTTP response code: ${http_response_code}");
+					}
+					return null;
+				} 
+			} else {
+				error_log("Crowd SSO Failure: Did not receive cookie name from Crowd or error.  Odd that.");
+				return null;
+			}
+		}
+	}
+
+	function tokenAuthCreateSession($username,$password) {
+		$cookie_config = $this->getCrowdCookieConfig();
+
+		if($cookie_config == null) {
+			// errors have already been logged in this case
+			return null;
+		} else {
+			$tokenCreationXML = $this->generateTokenCreationXML($username, $password);
+			$rc = curlDo("/session", null, $tokenCreationXML);
+			$http_response_code = $rc['metadata']['http_code'];
+			if ($http_response_code == 201) { // 201 == created
+				// good to go, token is created and authentication verified
+				// extract username from response
+				$xmlResponse = new SimpleXMLElement($rc['response']);
+				$userElement = $xmlResponse->user;
+				$authenticated_username = $userElement->name;
+
+				// confirm that tokens match (just in case)
+				$authenticated_token = $xmlResponse->token;
+
+				// set the cookie
+				$name = $cookie_config['name'];
+				$domain = $cookie_config['domain'];
+				$secure = $cookie_config['secure'];
+				$value = $authenticated_token;
+				$session_only = 0;
+				setcookie($name, $value, $session_only, '/', $domain, $secure);
+				return $authenticated_username;
+			}
+
+				return $authenticated_token; // SSO successful
+			} elseif($http_response_code == 404) {
+				// bad/expired token
+			} elseif ($http_response_code == 400) {
+				// validation factors did not match token - IP address changed
+				// see https://answers.atlassian.com/questions/65240/how-is-the-remote-address-in-crowd-s-validationfactor-enforced
+				error_log("Crowd SSO inconsistency: validation factors failed for token ${token} - malfeasance?");
+			} else {
+				error_log("Crowd SSO: got back unexpected HTTP response code: ${http_response_code}");
+			}
+			return null;
+		} 
+			} else {
+				error_log("Crowd SSO Failure: Did not receive cookie name from Crowd or error.  Odd that.");
+				return null;
+			}
+		}
+	}
+
+	function getCrowdCookieConfig() {
+		$rc = curlDo("/config/cookie");
+		if(!$this->curl_logerror($rc,"Error while retrieving Crowd cookie config")){
+			return null;
+		} else {
+			$xmlResponse = $this->crowd_xml_logerror($rc,"Crowd error while retrieving cookie config");
+			$cookie_config = array();
+			$cookie_config['domain'] = $xmlResponse->domain;
+			$cookie_config['secure'] = $xmlResponse->secure;
+			$cookie_config['name']   = $xmlResponse->name;
+			return $cookie_config;
+		}
+
+		return null;
 	}
 
 	function userIsInGroup($username, $groupname) {
-		$rc = $this->curlPost("/user/group/nested",array("username" => $username, "groupname" => $groupname));
+		$rc = $this->curlDo("/user/group/nested",array("username" => $username, "groupname" => $groupname));
 
 		$http_response_code = $rc['metadata']['CURLINFO_HTTP_CODE'];
 
@@ -156,7 +324,7 @@ class CrowdREST {
 	}
 
 	function getUserInfo($username) {
-		$rc = $this->curlPost('/user', array('username' => $username));
+		$rc = $this->curlDo('/user', array('username' => $username));
 
 		if (!$this->curl_logerror($rc,"Error while retrieving user info for username '${username}'")){
 			return null;
@@ -201,5 +369,29 @@ class CrowdREST {
 		return $xml;
 	}
 
+	private function generateTokenVerificationXML() {
+		$document = new DOMDocument("1.0","UTF-8");
+		$validationFactors = $document->appendChild($document->createElement("validation-factors"));
+		$validationFactor = $validationFactors->appendChild($document->createElement("validation-factor"));
+		$validationFactor->appendChild($document->createElement('name','remote_address'));
+		$validationFactor->appendChild($document->createElement('value',$_SERVER['REMOTE_ADDR']);
+		$xml = $document->saveXML();
+		return $xml;
+	}
+
+	private function generateTokenCreationXML($username, $password) {
+		$document = new DOMDocument("1.0","UTF-8");
+		$authenticationContext = $document->appendChild($document->createElement("authentication-context"));
+		$authenticationContext->appendChild($document->createElement("username",$username));
+		$passwordNode =	$authenticationContext->appendChild($document->createElement("password"));
+		$cdata = $document->createCDATASection($password);
+		$passwordNode->addChild($cdata);
+		$validationFactors = $authenticationContext->appendChild($document->createElement("validation-factors"));
+		$validationFactor = $validationFactors->appendChild($document->createElement("validation-factor"));
+		$validationFactor->appendChild($document->createElement('name','remote_address'));
+		$validationFactor->appendChild($document->createElement('value',$_SERVER['REMOTE_ADDR']);
+		$xml = $document->saveXML();
+		return $xml;
+	}
 }
 ?>

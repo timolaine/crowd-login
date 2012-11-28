@@ -49,20 +49,6 @@ function crowd_authenticate($user, $username, $password) {
 	// some previous authentication already suceeded, defer
 	if ( is_a($user, 'WP_User') ) { return $user; }
 
-	// make sure we have what we need to authenticate
-	if ( empty($username) || empty($password) ) {
-		$error = new WP_Error();
-
-		if ( empty($username) ) {
-			$error->add('empty_username', __('<strong>ERROR</strong>: The username field is empty.'));
-		}
-
-		if ( empty($password) ) {
-			$error->add('empty_password', __('<strong>ERROR</strong>: The password field is empty.'));
-		}
-		return $error;
-	}
-
 	// set up our environment
 	$crowd_url = get_option('crowd_url');
 	$crowd_app_name = get_option('crowd_app_name');
@@ -78,8 +64,23 @@ function crowd_authenticate($user, $username, $password) {
 
 	$rc = null;
 	if($crowd_api_mode == "rest") {
+		// this mode can handle SSO tokens and, thusly, empty usernames and passwords
 		$rc = crowd_authenticate_rest($user, $username, $password, $crowd_config);
 	} elseif($crowd_api_mode == "soap") {
+		// make sure we have what we need to authenticate
+		if ( empty($username) || empty($password) ) {
+			$error = new WP_Error();
+
+			if ( empty($username) ) {
+				$error->add('empty_username', __('<strong>ERROR</strong>: The username field is empty.'));
+			}
+
+			if ( empty($password) ) {
+				$error->add('empty_password', __('<strong>ERROR</strong>: The password field is empty.'));
+			}
+			return $error;
+		}
+
 		$rc = crowd_authenticate_soap($user, $username, $password, $crowd_config);
 	} else {
 		return new WP_Error($code = null, $message = "Invalid Crowd Authentication API Mode: ${crowd_api_mode} (valid values are 'rest' and 'soap')");
@@ -99,9 +100,70 @@ function crowd_authenticate($user, $username, $password) {
 }
 
 function crowd_authenticate_rest($user, $username, $password, $crowd_config) {
-	$error = new WP_Error($code = null, $message = "REST authentication not yet implemented");
-	return $error;
+	$crowd = new CrowdREST($crowd_config);
+	$authenticated_username = $crowd->authenticateUser($username, $password);
+	if($authenticated_username == null) {
+		return new WP_Error($code = null, $message = "username or password incorrect");
+	} else {
+		$user = get_userdatabylogin($authenticated_username);
+
+		if ( !$user || (strtolower($user->user_login) != strtolower($username)) ) {
+			//No user, can we create?
+			switch(get_option('crowd_login_mode')) {
+				case 'mode_create_all':
+
+					// create the new user using crowd data
+					$new_user_id = crowd_create_rest_wp_user($authenticated_username);
+
+					if(!is_a($new_user_id, 'WP_Error')) {
+						//It worked
+						return new WP_User($new_user_id);
+					} else {
+						do_action( 'wp_login_failed', $authenticated_username );				
+						return new WP_Error('invalid_username', __('<strong>Crowd Login Error</strong>: Crowd credentials are correct and user creation is allowed but an error occurred creating the user in Wordpress. Actual WordPress error: '.$new_user_id->get_error_message()));
+					}
+					break;
+					
+				case 'mode_create_group':
+					if(crowd_is_in_rest_group($authenticated_username)) {
+
+					// create the new user using crowd data
+					$new_user_id = crowd_create_rest_wp_user($authenticated_username);
+
+					if(!is_a($new_user_id, 'WP_Error')) {
+							//It worked
+							return new WP_User($new_user_id);
+						} else {
+							do_action( 'wp_login_failed', $authenticated_username );				
+							return new WP_Error('invalid_username', __('<strong>Crowd Login Error</strong>: Crowd credentials are correct and user creation is allowed and you are in the correct group but an error occurred creating the user in Wordpress. Actual WordPress error: '.$new_user_id->get_error_message()));
+						}
+					} else {
+						do_action( 'wp_login_failed', $authenticated_username );				
+						return new WP_Error('invalid_username', __('<strong>Crowd Login Error</strong>: Crowd Login credentials are correct and user creation is allowed but Crowd user was not in the correct group.'));
+					}
+					break;
+					
+				default:
+					do_action( 'wp_login_failed', $authenticated_username );				
+					return new WP_Error('invalid_username', __('<strong>Crowd Login Error</strong>: Crowd Login mode does not permit account creation.'));
+			}
+		} else {
+			//Wordpress user exists, should we check group membership?
+			if(get_option('crowd_login_mode') == 'mode_create_group') {
+				if(crowd_is_in_rest_group($authenticated_username)) {
+					return new WP_User($user->ID);
+				} else {
+					do_action( 'wp_login_failed', $authenticated_username );				
+					return new WP_Error('invalid_username', __('<strong>Crowd Login Error</strong>: Crowd credentials were correct but user is not in the correct group.'));
+				}
+			} else {
+				//Otherwise, we're ready to return the user
+				return new WP_User($user->ID);
+			}
+		}
+	}
 }
+
 
 
 function crowd_authenticate_soap($user, $username, $password, $crowd_config) {
@@ -210,7 +272,7 @@ function crowd_is_in_group($username) {
 		return $result;
 	}
 
-	$crowd_group = $get_option('crowd_group');
+	$crowd_group = get_option('crowd_group');
 
 	$groups = $crowd->findGroupMemberships($username);
 	if ($groups == NULL) {
@@ -220,6 +282,10 @@ function crowd_is_in_group($username) {
 	$result = in_array($crowd_group, $groups);	
 
 	return $result;
+}
+
+function crowd_is_in_rest_group($username,$rest) {
+	return $rest->userIsInGroup($username,get_option('crowd_group'));
 }
 
 function crowd_create_wp_user($username) {
@@ -252,6 +318,14 @@ function crowd_create_wp_user($username) {
 	$result = wp_insert_user($userData); 
 
 	return $result;
+}
+
+function crowd_create_rest_wp_user($authenticated_username$authenticated_username, $rest) {;
+	// create the new user using crowd data
+	$user_data = $rest->getUserInfo($authenticated_username);
+	$user_data['role']= strtolower(get_option('crowd_account_type'));
+	$new_user_id = wp_insert_user($user_data);
+	return $new_user_id;
 }
 
 function getUserInfo($principal_token) {
