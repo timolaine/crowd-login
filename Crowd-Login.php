@@ -356,7 +356,7 @@ function crowd_create_wp_user($username) {
 	return $result;
 }
 
-function crowd_create_rest_wp_user($authenticated_username$authenticated_username, $rest) {;
+function crowd_create_rest_wp_user($authenticated_username, $authenticated_username, $rest) {;
 	// create the new user using crowd data
 	$user_data = $rest->getUserInfo($authenticated_username);
 	$user_data['role']= strtolower(get_option('crowd_account_type'));
