@@ -336,6 +336,32 @@ class CrowdREST {
 		}
 	}
 
+	function getUserGroups($username) {
+		$rc = $this->curlDo("/user/group/nested",array("username" => $username));
+
+		$http_response_code = $rc['metadata']['http_code'];
+
+		if($http_response_code == 200) {
+
+			$xmlResponse = new SimpleXMLElement($rc['response']);
+
+			$groups = array();
+
+			foreach($xmlResponse->children() as $child) {
+		 		$groups[] = (string) $child['name'];
+			}
+
+			return $groups;
+		} elseif ($http_response_code == 404) {
+			// user not found
+			return false;
+		} else {
+			// some other error
+			$this->curl_logerror($rc, "Error while looking for groups of user '${username}'");
+			return false;
+		}
+	}
+
 	function getUserInfo($username) {
 		$rc = $this->curlDo('/user', array('username' => $username));
 
